@@ -31,8 +31,7 @@ $db_name = "test";
  * d1		08-May-2003		Mike Taylor		created
 */
 
-function showDatabases() 
-{
+function showDatabases() {
 	global $server_name, $user_name, $user_passwd, $db_name;
 	$link = mysql_connect($server_name, $user_name, $user_passwd,true)
 		or die("Could not connect: " . mysql_errno() . ": " . mysql_error() . "\n");
@@ -45,7 +44,6 @@ function showDatabases()
 	}
 	mysql_select_db($db_name) or die("Could not select database: " . mysql_errno() . ": " . mysql_error()  ."<br>\n");
 }
-
 
 /*
 *   mysql_fetch_array_nullsafe
@@ -82,8 +80,7 @@ function mysql_fetch_array_nullsafe($result) {
 }
 
 
-function stripCommas($str)
-{
+function stripCommas($str) {
 	if (strrpos($str, '.')) 
 	{
 		$lf = substr($str, 0, strrpos($str, '.'));
@@ -93,6 +90,71 @@ function stripCommas($str)
 	$return = ereg_replace(',', '', $lf);
 	return $return;
 }
+
+
+class Request {
+    public $url_elements;
+    public $verb;
+    public $parameters;
+ 
+    public function __construct() {
+        $this->verb = $_SERVER['REQUEST_METHOD'];
+        $this->url_elements = explode('/', $_SERVER['PATH_INFO']);
+		$this->parseIncomingParams();
+        // initialise json as default format
+        $this->format = 'json';
+        if(isset($this->parameters['format'])) {
+            $this->format = $this->parameters['format'];
+        }
+        return true;
+    }
+ 
+    public function parseIncomingParams() {
+        $parameters = array();
+ 
+        // first of all, pull the GET vars
+        if (isset($_SERVER['QUERY_STRING'])) {
+            parse_str($_SERVER['QUERY_STRING'], $parameters);
+        }
+ 
+        // now how about PUT/POST bodies? These override what we got from GET
+        $body = file_get_contents("php://input");
+        $content_type = false;
+        if(isset($_SERVER['CONTENT_TYPE'])) {
+            $content_type = $_SERVER['CONTENT_TYPE'];
+        }
+        switch($content_type) {
+            case "application/json":
+                $body_params = json_decode($body);
+                if($body_params) {
+                    foreach($body_params as $param_name => $param_value) {
+                        $parameters[$param_name] = $param_value;
+                    }
+                }
+                $this->format = "json";
+                break;
+            case "application/x-www-form-urlencoded":
+                parse_str($body, $postvars);
+                foreach($postvars as $field => $value) {
+                    $parameters[$field] = $value;
+ 
+                }
+                $this->format = "html";
+                break;
+            default:
+                // we could parse other supported formats here
+                break;
+        }
+        $this->parameters = $parameters;
+    }
+}
+
+
+
+
+
+
+
 
 
 
@@ -160,4 +222,40 @@ class cURL {
 		die; 
 	} 
 } 
+
+	// Initialize options for REST interface
+	$elastic_url="http://127.0.0.1:9200";
+	$elastic_option_defaults = array(
+		CURLOPT_HEADER => false,
+		CURLOPT_RETURNTRANSFER => true,
+		CURLOPT_TIMEOUT => 2
+	  ); 
+	
+	// ArangoDB REST function.
+	// Connection are created demand and closed by PHP on exit.
+	function elastic_rest($method,$uri,$query=NULL,$json=NULL,$options=NULL){
+	  global $elastic_url,$elastic_link,$elastic_option_defaults;
+	
+	  // Connect 
+	  if(!isset($elastic_link)) $elastic_link = curl_init();
+	
+	  //echo "<br>DB operation: $method $uri $query $json\n";
+	
+	  // Compose query
+	  $options = array(
+		CURLOPT_URL => $elastic_url.$uri."?".$query,
+		CURLOPT_CUSTOMREQUEST => $method, // GET POST PUT PATCH DELETE HEAD OPTIONS 
+		CURLOPT_POSTFIELDS => $json,
+	  ); 
+	  curl_setopt_array($elastic_link,($options + $elastic_option_defaults)); 
+	
+	  // send request and wait for response
+	  $response =  json_decode(curl_exec($elastic_link),true);
+	
+	  //echo "<br>response from DB: \n";
+	  //print_r($response);
+	  
+	  return($response);
+	}
+
 ?>
